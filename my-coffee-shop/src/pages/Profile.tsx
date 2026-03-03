@@ -10,30 +10,72 @@ import { User, Mail, Phone, MapPin, ShoppingBag, Settings, LogOut, ArrowLeft } f
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useState } from "react";
 
+interface UserProfile {
+  id: number;
+  name: string;
+  email: string;
+  phoneNumber?: string;
+  photoUrl?: string; // current photo URL
+  photoFile?: File; // local new photo before upload
+  description?: string;
+  membership?: string;
+}
+
 const Profile = () => {
   const { toast } = useToast();
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
   const handleSave = async () => {
-    const res= await fetch("http://localhost:5000/auth/me", {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
+    if (!user) return;
 
-        "Authorization": `Bearer ${localStorage.getItem("authToken")}`,
-        },
-        body: JSON.stringify({ name: user.name, email: user.email, phoneNumber: user.phoneNumber }),
-    });
-    if (!res.ok) {
-        toast({
-            title: "Update Failed",
-            description: "Could not update profile. Please try again.",
-            variant: "destructive",
-        });
-        return;
+    const token = localStorage.getItem("authToken");
+    if (!token) {
+      toast({
+        title: "Unauthorized",
+        description: "Please login first",
+        variant: "destructive",
+      });
+      return;
     }
-}
+
+    try {
+      const formData = new FormData();
+      formData.append("name", user.name);
+      formData.append("email", user.email);
+      formData.append("phoneNumber", user.phoneNumber || "");
+      if (user.photoFile) formData.append("photo", user.photoFile);
+
+      const res = await fetch("http://localhost:5000/users/me", {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        body: formData,
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data?.message || "Could not update profile.");
+      }
+
+      const updatedUser = await res.json();
+      setUser(updatedUser);
+
+      toast({
+        title: "Profile Updated",
+        description: "Your profile and photo were successfully updated.",
+        variant: "default",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Update Failed",
+        description: error?.message || "Could not update profile. Please try again.",
+        variant: "destructive",
+      });
+      console.error("Profile update error:", error);
+    }
+  };
 
   const handleLogout = () => {
     toast({
@@ -44,22 +86,20 @@ const Profile = () => {
 
   const getProfile = async () => {
     try {
-      const res = await fetch("http://localhost:5000/auth/me", {
+      const res = await fetch("http://localhost:5000/users/me", {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("authToken")}`,
+          Authorization: `Bearer ${localStorage.getItem("authToken")}`,
         },
       });
 
       if (!res.ok) throw new Error("Failed to fetch profile");
 
       const data = await res.json();
-      console.log("✅ Profile data:", data.name);
-      setUser(data); // save user info in state
-      
+      setUser(data);
     } catch (err) {
-      console.error("❌ Profile fetch error:", err);
+      console.error("Profile fetch error:", err);
       toast({
         title: "Session expired",
         description: "Please log in again.",
@@ -70,10 +110,12 @@ const Profile = () => {
     }
   };
 
-  // Run once when component mounts
   useEffect(() => {
     getProfile();
   }, []);
+
+  if (loading) return <p>Loading...</p>;
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -101,17 +143,49 @@ const Profile = () => {
           <Card className="lg:col-span-1">
             <CardHeader className="text-center">
               <div className="flex justify-center mb-4">
-                <Avatar className="h-24 w-24">
-                  <AvatarImage src="" alt="Profile" />
-                  <AvatarFallback className="bg-primary text-primary-foreground text-2xl">
-                    JD
-                  </AvatarFallback>
-                </Avatar>
+  <Avatar className="h-24 w-24">
+  <AvatarImage
+    src={
+      user.photoFile // if user selects a new photo
+        ? URL.createObjectURL(user.photoFile) 
+        : user.photoUrl || "" // else use photo from signup
+    }
+    alt={`${user.name || "User"} Profile`}
+  />
+  <AvatarFallback className="bg-primary text-primary-foreground text-2xl">
+    {user.name
+      ? user.name.split(" ").map((n) => n[0]).join("")
+      : "U"}
+  </AvatarFallback>
+</Avatar>
               </div>
-              <CardTitle>John Doe</CardTitle>
-              <CardDescription>Coffee Enthusiast</CardDescription>
+
+              {/* Upload new photo */}
+              <div className="mt-2">
+                <Label htmlFor="photo-upload">Change Photo</Label>
+                <input
+                  id="photo-upload"
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files.length > 0) {
+                      setUser({ ...user, photoFile: e.target.files[0] });
+                    }
+                  }}
+                  className="block w-full text-sm text-gray-500
+                             file:mr-4 file:py-2 file:px-4
+                             file:rounded-full file:border-0
+                             file:text-sm file:font-semibold
+                             file:bg-primary file:text-white
+                             hover:file:bg-primary/80
+                             bg-background/50 mt-2"
+                />
+              </div>
+
+              <CardTitle>{user.name}</CardTitle>
+              <CardDescription>{user.description}</CardDescription>
               <Badge className="mx-auto mt-2" variant="secondary">
-                Premium Member
+                {user.membership}
               </Badge>
             </CardHeader>
             <CardContent>
@@ -144,22 +218,38 @@ const Profile = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="name">User Name</Label>
-                    <Input id="name" placeholder="John Doe" value={user?.name || ""}
-  onChange={(e) => setUser({ ...user, name: e.target.value })} />
+                    <Input
+                      id="name"
+                      placeholder="John Doe"
+                      value={user?.name || ""}
+                      onChange={(e) => setUser({ ...user!, name: e.target.value })}
+                    />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <div className="flex">
                     <Mail className="h-4 w-4 mr-2 mt-3 text-muted-foreground" />
-                    <Input id="email" type="email" placeholder="john@example.com" value={user?.email || ""} onChange={(e) => setUser({ ...user, email: e.target.value })} />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="john@example.com"
+                      value={user?.email || ""}
+                      onChange={(e) => setUser({ ...user!, email: e.target.value })}
+                    />
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="phone">Phone</Label>
                   <div className="flex">
                     <Phone className="h-4 w-4 mr-2 mt-3 text-muted-foreground" />
-                    <Input id="phone" type="tel" placeholder="+1 234 567 8900" value={user?.phoneNumber || ""} onChange={(e) => setUser({ ...user, phoneNumber: e.target.value })} />
+                    <Input
+                      id="phone"
+                      type="tel"
+                      placeholder="+1 234 567 8900"
+                      value={user?.phoneNumber || ""}
+                      onChange={(e) => setUser({ ...user!, phoneNumber: e.target.value })}
+                    />
                   </div>
                 </div>
                 <Button onClick={handleSave} className="w-full md:w-auto">
@@ -168,7 +258,7 @@ const Profile = () => {
               </CardContent>
             </Card>
 
-            {/* Shipping Address */}
+             {/* Shipping Address */}
             <Card>
               <CardHeader>
                 <CardTitle>Shipping Address</CardTitle>

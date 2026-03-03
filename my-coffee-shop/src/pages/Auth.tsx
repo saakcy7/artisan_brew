@@ -13,11 +13,12 @@ const Auth = () => {
   const [password, setPassword] = useState("");
   const [name, setName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [photo, setPhoto] = useState<File | null>(null);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     try{
-        const res = await fetch ("http://localhost:5000/auth/login", {
+        const res = await fetch ("http://localhost:5000/users/login", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -44,28 +45,42 @@ const Auth = () => {
   }
 };
 
-const handleSignup = async (e: React.FormEvent) => {
+const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
   e.preventDefault();
+
   try {
-    const res = await fetch ("http://localhost:5000/auth/register", {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ name, email, password, phoneNumber }),
-    })
-    
-    const data = await res.json().catch(() => ({}));
+    const formData = new FormData();
+    formData.append("name", name);
+    formData.append("email", email);
+    formData.append("password", password);
+    formData.append("phoneNumber", phoneNumber);
+    if (photo) formData.append("photo", photo); // attach photo if exists
+
+    const res = await fetch("http://localhost:5000/users/register", {
+      method: "POST",
+      body: formData, // FormData replaces JSON body
+    });
+
+    // parse JSON safely
+    const data: { token?: string; authToken?: string; message?: string } = await res.json().catch(() => ({}));
+
     if (!res.ok) {
       throw new Error(data?.message || "Could not create account.");
     }
 
-    localStorage.setItem("authToken", data.authToken);
-    window.dispatchEvent(new CustomEvent("auth:changed", { detail: { loggedIn: true } }));
+    // store token dynamically
+    const token = data.authToken || data.token;
+    if (token) {
+      localStorage.setItem("authToken", token);
+      window.dispatchEvent(new CustomEvent("auth:changed", { detail: { loggedIn: true } }));
+    }
 
-    toast({ title: "Account Created", description: "Welcome to our coffee community." });
-
-  } catch (error) {
+    toast({
+      title: "Account Created",
+      description: "Welcome to our coffee community.",
+      variant: "default",
+    });
+  } catch (error: any) {
     toast({
       title: "Signup Failed",
       description: error?.message || "An error occurred during signup. Please try again.",
@@ -134,55 +149,81 @@ const handleSignup = async (e: React.FormEvent) => {
                 Sign Up
               </AccordionTrigger>
               <AccordionContent>
-                <form onSubmit={handleSignup} className="space-y-4 pt-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-name">Full Name</Label>
-                    <Input
-                      id="signup-name"
-                      type="text"
-                      placeholder="John Doe"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      className="bg-background/50"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-email">Email</Label>
-                    <Input
-                      id="signup-email"
-                      type="email"
-                      placeholder="your@email.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="bg-background/50"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-phone">Phone Number</Label>
-                    <Input
-                      id="signup-phone"
-                      type="tel"
-                      placeholder="+1234567890"
-                      value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value)}
-                      className="bg-background/50"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-password">Password</Label>
-                    <Input
-                      id="signup-password"
-                      type="password"
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="bg-background/50"
-                    />
-                  </div>
-                  <Button type="submit" className="w-full">
-                    Create Account
-                  </Button>
-                </form>
+                <form onSubmit={handleSignup} className="space-y-4 pt-4" encType="multipart/form-data">
+  <div className="space-y-2">
+    <Label htmlFor="signup-name">Full Name</Label>
+    <Input
+      id="signup-name"
+      type="text"
+      placeholder="John Doe"
+      value={name}
+      onChange={(e) => setName(e.target.value)}
+      className="bg-background/50"
+    />
+  </div>
+
+  <div className="space-y-2">
+    <Label htmlFor="signup-email">Email</Label>
+    <Input
+      id="signup-email"
+      type="email"
+      placeholder="your@email.com"
+      value={email}
+      onChange={(e) => setEmail(e.target.value)}
+      className="bg-background/50"
+    />
+  </div>
+
+  <div className="space-y-2">
+    <Label htmlFor="signup-phone">Phone Number</Label>
+    <Input
+      id="signup-phone"
+      type="tel"
+      placeholder="+1234567890"
+      value={phoneNumber}
+      onChange={(e) => setPhoneNumber(e.target.value)}
+      className="bg-background/50"
+    />
+  </div>
+
+  <div className="space-y-2">
+    <Label htmlFor="signup-password">Password</Label>
+    <Input
+      id="signup-password"
+      type="password"
+      placeholder="••••••••"
+      value={password}
+      onChange={(e) => setPassword(e.target.value)}
+      className="bg-background/50"
+    />
+  </div>
+
+  {/* Profile Photo Upload */}
+<div className="space-y-2">
+  <Label htmlFor="signup-photo">Profile Photo</Label>
+  <input
+    id="signup-photo"
+    type="file"
+    accept="image/*"
+    onChange={(e) => {
+      if (e.target.files && e.target.files.length > 0) {
+        setPhoto(e.target.files[0]);
+      }
+    }}
+    className="block w-full text-sm text-gray-500
+               file:mr-4 file:py-2 file:px-4
+               file:rounded-full file:border-0
+               file:text-sm file:font-semibold
+               file:bg-primary file:text-white
+               hover:file:bg-primary/80
+               bg-background/50"
+  />
+</div>
+
+  <Button type="submit" className="w-full">
+    Create Account
+  </Button>
+</form>
               </AccordionContent>
             </AccordionItem>
           </Accordion>

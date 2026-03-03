@@ -1,98 +1,84 @@
-import User from "../models/userModel.js";
+import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
+import pool from "../config/db.js";
+import { createUser, findUserByEmail } from "../models/userModel.js";
+import dotenv from "dotenv";
 
-const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "30d" });
-};
-
-// @desc Register user
 export const registerUser = async (req, res) => {
+  const { name, email, password, phoneNumber } = req.body;
+  const photoUrl = req.file ? req.file.path : null;
+
   try {
-    const { name, email, password, phoneNumber } = req.body;
-    if (!name || !email || !password || !phoneNumber)
-      return res.status(400).json({ message: "All fields are required" });
+    const hashedPassword = await bcrypt.hash(password, 10);
 
-    const userExists = await User.findOne({ email });
-    if (userExists) return res.status(400).json({ message: "User already exists" });
+    const result = await pool.query(
+      "INSERT INTO users (name, email, password, phone_number, photo_url) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+      [name, email, hashedPassword, phoneNumber, photoUrl]
+    );
 
-    const user = await User.create({ name, email, password, phoneNumber });
-    res.status(201).json({
-      _id: user.id,
-      name: user.name,
-      email: user.email,
-      phoneNumber: user.phoneNumber,
-      token: generateToken(user.id),
-    });
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// @desc Login user
-export const loginUser = async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    const user = await User.findOne({ email });
-    if (user && (await user.matchPassword(password))) {
-      res.json({
-        _id: user.id,
-        name: user.name,
-        email: user.email,
-        token: generateToken(user.id),
-      });
-    } else {
-      res.status(401).json({ message: "Invalid credentials" });
-    }
-  } catch (error) {
-    res.status(500).json({ message: error.message });
-  }
-};
-
-// @desc Get user profile (Protected)
-export const getProfile = async (req, res) => {
-  try {
-    // make sure req.user exists
-    if (!req.user || !req.user.id) {
-      return res.status(401).json({ message: "Unauthorized - No user info" });
-    }
-
-    const user = await User.findById(req.user.id).select("-password");
-    console.log("Decoded user:", req.user);
-
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    res.status(200).json(user);
-  } catch (error) {
-    console.error("Error fetching profile:", error.message);
-    res.status(500).json({ message: "Server error" });
-  }
-};
-
-export const updateProfile = async (req, res) => {
-  try {
-    const { name, email, phoneNumber } = req.body;
-
-    // Optional: You can add fields like bio, phone, etc.
-    const updatedUser = await User.findByIdAndUpdate(
-      req.user.id,
-      { name, email, phoneNumber },
-      { new: true, runValidators: true }
-    ).select("-password");
-
-    if (!updatedUser) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    const user = result.rows[0];
+    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: "1d" });
 
     res.json({
-      message: "Profile updated successfully",
-      user: updatedUser,
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phoneNumber: user.phone_number,
+        photoUrl: user.photo_url,
+      },
     });
-  } catch (error) {
-    console.error("Update profile error:", error);
+  } catch (err) {
+    console.error(err);
     res.status(500).json({ message: "Server error" });
   }
 };
 
+export const loginUser = async (req, res) => {
+  const { email, password } = req.body;
+
+  try {
+    const result = await pool.query("SELECT * FROM users WHERE email = $1", [email]);
+    if (result.rows.length === 0) return res.status(400).json({ message: "Invalid email or password" });
+
+    const user = result.rows[0];
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(400).json({ message: "Invalid email or password" });
+
+    const token = jwt.sign({ id: user.id }, process.env.JWT_SECRET, { expiresIn: "1d" });
+
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phoneNumber: user.phone_number,
+        photoUrl: user.photo_url,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const getProfile = async (req, res) => {
+  try {
+    const userId = req.user.id; // from JWT middleware
+
+    const result = await pool.query(
+      "SELECT id, name, email, phone_number, photo_url AS photoUrl, created_at FROM users WHERE id = $1",
+      [userId]
+    );
+
+    if (result.rows.length === 0)
+      return res.status(404).json({ message: "User not found" });
+
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
