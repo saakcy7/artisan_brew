@@ -52,7 +52,7 @@ useEffect(() => {
               <a href="/auth" className="text-foreground hover:text-accent transition-colors">Login/Signup</a>
             )}
             {isLoggedIn && (
-              <Button variant="ghost" onClick={handlelogout}>
+              <Button variant="ghost" data-testid="logout-btn" onClick={handlelogout}>
                 Logout
               </Button>
             )}

@@ -8,7 +8,6 @@ import NotFound from "./pages/NotFound";
 import Auth from "./pages/Auth";
 import Home from "./pages/Home";
 import Profile from "./pages/Profile";
-
 const queryClient = new QueryClient();
 
 const App = () => (

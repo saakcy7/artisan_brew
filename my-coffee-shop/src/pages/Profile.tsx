@@ -25,6 +25,17 @@ const Profile = () => {
   const { toast } = useToast();
   const [user, setUser] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [preview, setPreview] = useState(user?.photoUrl || "");
+
+const handlePhotoChange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  setUser({ ...user, photoFile: file });
+
+  const imageUrl = URL.createObjectURL(file);
+  setPreview(imageUrl);
+};
 
   const handleSave = async () => {
     if (!user) return;
@@ -40,28 +51,23 @@ const Profile = () => {
     }
 
     try {
-      const formData = new FormData();
-      formData.append("name", user.name);
-      formData.append("email", user.email);
-      formData.append("phoneNumber", user.phoneNumber || "");
-      if (user.photoFile) formData.append("photo", user.photoFile);
+      const handleSave = async () => {
+  const formData = new FormData();
+  formData.append("name", user.name);
+  formData.append("email", user.email);
+  formData.append("phoneNumber", user.phoneNumber);
 
-      const res = await fetch("http://localhost:5000/users/me", {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: formData,
-      });
+  if (user.photoFile) {
+    formData.append("photo", user.photoFile);
+  }
 
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data?.message || "Could not update profile.");
-      }
+  await fetch("http://localhost:5000/user/me", {
+    method: "PUT",
+    body: formData,
+  });
+};
 
-      const updatedUser = await res.json();
-      setUser(updatedUser);
-
+     
       toast({
         title: "Profile Updated",
         description: "Your profile and photo were successfully updated.",
@@ -143,44 +149,33 @@ const Profile = () => {
           <Card className="lg:col-span-1">
             <CardHeader className="text-center">
               <div className="flex justify-center mb-4">
-  <Avatar className="h-24 w-24">
+       
+ <Avatar className="h-24 w-24">
   <AvatarImage
-    src={
-      user.photoFile // if user selects a new photo
-        ? URL.createObjectURL(user.photoFile) 
-        : user.photoUrl || "" // else use photo from signup
-    }
-    alt={`${user.name || "User"} Profile`}
+    src={preview || user?.photoUrl || ""}
+    alt="Profile"
   />
-  <AvatarFallback className="bg-primary text-primary-foreground text-2xl">
-    {user.name
+  <AvatarFallback className="bg-primary text-white text-2xl">
+    {user?.name
       ? user.name.split(" ").map((n) => n[0]).join("")
       : "U"}
   </AvatarFallback>
 </Avatar>
+  
               </div>
 
-              {/* Upload new photo */}
-              <div className="mt-2">
-                <Label htmlFor="photo-upload">Change Photo</Label>
-                <input
-                  id="photo-upload"
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    if (e.target.files && e.target.files.length > 0) {
-                      setUser({ ...user, photoFile: e.target.files[0] });
-                    }
-                  }}
-                  className="block w-full text-sm text-gray-500
-                             file:mr-4 file:py-2 file:px-4
-                             file:rounded-full file:border-0
-                             file:text-sm file:font-semibold
-                             file:bg-primary file:text-white
-                             hover:file:bg-primary/80
-                             bg-background/50 mt-2"
-                />
-              </div>
+                     <input
+  type="file"
+  accept="image/*"
+  onChange={handlePhotoChange}
+  className="block w-full text-sm text-gray-500
+             file:mr-4 file:py-2 file:px-4
+             file:rounded-full file:border-0
+             file:text-sm file:font-semibold
+             file:bg-primary file:text-white
+             hover:file:bg-primary/80
+             bg-background/50 mt-2"
+/>
 
               <CardTitle>{user.name}</CardTitle>
               <CardDescription>{user.description}</CardDescription>
